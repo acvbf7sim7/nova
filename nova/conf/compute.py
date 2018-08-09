@@ -90,6 +90,13 @@ Possible values:
 
 * Valid keys for the template are: name, uuid, count.
 """),
+    #(jaekyun): Additional Boolean Custom Parameter
+    cfg.BoolOpt('force_multi_instance_display_name',
+                default=False,
+               help="""
+Custom parameter to use "multi_instance_display_name_template" even a single instance
+.
+"""),
     cfg.IntOpt('max_local_block_devices',
                default=3,
                help="""

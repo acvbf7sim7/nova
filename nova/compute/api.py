@@ -536,11 +536,12 @@ class API(base.Base):
             'auto_disk_config': auto_disk_config
         }
 
-    def _new_instance_name_from_template(self, uuid, display_name, index):
+    def _new_instance_name_from_template(self, uuid, display_name, index, project_name):
         params = {
             'uuid': uuid,
             'name': display_name,
-            'count': index + 1,
+            'count': index,
+	    'project-name': project_name, #(jaekyun) project name is added
         }
         try:
             new_name = (CONF.multi_instance_display_name_template %
@@ -554,7 +555,7 @@ class API(base.Base):
     def _apply_instance_name_template(self, context, instance, index):
         original_name = instance.display_name
         new_name = self._new_instance_name_from_template(instance.uuid,
-                instance.display_name, index)
+                instance.display_name, index, context.project_name) #(jaekyun) Passing project_name argument
         instance.display_name = new_name
         if not instance.get('hostname', None):
             if utils.sanitize_hostname(original_name) == "":
@@ -936,11 +937,17 @@ class API(base.Base):
                 instance.uuid = instance_uuid
                 instance.update(base_options)
                 instance.keypairs = objects.KeyPairList(objects=[])
+
+		#(jaekyun) Send query to DB to read current instance in_use, 
+		# So that count should be incremented by 1 from the latest count number
+                _project = nova.db.sqlalchemy.api.quota_usage_get_all_by_project(context, instance.project_id)
+                _index = _project['instances']['in_use']
+
                 if key_pair:
                     instance.keypairs.objects.append(key_pair)
                 instance = self.create_db_entry_for_new_instance(context,
                         instance_type, boot_meta, instance, security_groups,
-                        block_device_mapping, num_instances, i,
+                        block_device_mapping, num_instances, _index + i + 1, #(jaekyun) send new count argument
                         shutdown_terminate, create_instance=False)
                 block_device_mapping = (
                     self._bdm_validate_set_size_and_instance(context,
@@ -1430,9 +1437,15 @@ class API(base.Base):
 
         self._populate_instance_names(instance, num_instances)
         instance.shutdown_terminate = shutdown_terminate
-        if num_instances > 1 and self.cell_type != 'api':
-            instance = self._apply_instance_name_template(context, instance,
-                                                          index)
+
+        #(jaekyun) If force_multi_instance_display_name is True, templete is applied even a single instance
+        if CONF.force_multi_instance_display_name:
+            if num_instances >= 1 and self.cell_type != 'api':
+                instance = self._apply_instance_name_template(context, instance, index)
+        else:
+            if num_instances > 1 and self.cell_type != 'api':
+                instance = self._apply_instance_name_template(context, instance,
+                                                              index)
 
         return instance
 
